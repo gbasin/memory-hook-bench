@@ -18,6 +18,7 @@ interface ExtractedMemory {
 }
 
 interface LanceMemory {
+  [key: string]: unknown;
   id: string;
   text: string;
   context: string;

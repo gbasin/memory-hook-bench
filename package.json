@@ -9,7 +9,9 @@
   "scripts": {
     "extract": "bun run src/docs-to-memories/cli.ts",
     "bench": "bun run src/bench/cli.ts",
-    "typecheck": "tsc --noEmit"
+    "lint": "oxlint .",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.1",
@@ -18,6 +20,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "oxlint": "^0.16.10",
     "typescript": "^5.0.0"
   }
 }

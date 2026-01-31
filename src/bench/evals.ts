@@ -2,7 +2,7 @@
  * Eval discovery and management
  */
 import { join } from "path";
-import { readdir, stat } from "fs/promises";
+import { readdir } from "fs/promises";
 import { exists, readText } from "../lib/fs";
 
 export interface EvalSpec {

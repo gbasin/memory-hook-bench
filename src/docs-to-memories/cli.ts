@@ -13,7 +13,7 @@ import { extractFromChunk } from "./claude";
 import { parseMemoriesFromModelOutput, finalizeMemories } from "./parse";
 import { writeJsonl, writeLanceDb, parseOutputUri } from "./output";
 import { exists } from "../lib/fs";
-import type { Memory } from "../lib/types";
+
 
 interface ExtractOptions {
   model: string;
