@@ -50,7 +50,9 @@ Options (setup-docs):
 Options (extract-memories):
   --verbose, -v              Show detailed progress per file/section
   --workers <n>              Parallel workers for extraction (default: 1)
+  --resume                   Resume from previous run (skip processed files)
   --skip-lancedb             Only extract JSON, don't embed to LanceDB
+  --force                    Overwrite existing LanceDB without prompting
 
 Options (run):
   --all                      Run all evals and configs
@@ -97,6 +99,8 @@ async function cmdExtractMemories(args: string[]) {
   const cfg = loadBenchConfig();
   const verbose = args.includes("--verbose") || args.includes("-v");
   const skipLanceDb = args.includes("--skip-lancedb");
+  const resume = args.includes("--resume");
+  const force = args.includes("--force");
   
   let workers = 1;
   const workersIdx = args.indexOf("--workers");
@@ -107,6 +111,15 @@ async function cmdExtractMemories(args: string[]) {
       console.warn(`Warning: ${workers} workers may overwhelm Claude CLI, capping at 8`);
       workers = 8;
     }
+  }
+  
+  // Check if LanceDB exists and warn
+  const lanceDir = dirname(cfg.memoriesLancePath);
+  if (!skipLanceDb && !force && existsSync(join(lanceDir, "memories.lance"))) {
+    console.warn(`\n⚠️  LanceDB already exists at: ${cfg.memoriesLancePath}`);
+    console.warn(`   Use --force to overwrite, or --skip-lancedb to only extract JSON.`);
+    console.warn(`   Use --resume to continue a previous extraction.\n`);
+    process.exit(1);
   }
 
   // Check if docs exist
@@ -124,7 +137,13 @@ async function cmdExtractMemories(args: string[]) {
   console.log(`${"=".repeat(60)}\n`);
 
   // Extract memories from all docs
-  const memories = await extractFromDirectory(cfg.docsDir, { verbose, workers });
+  const jsonlPath = cfg.memoriesJsonlPath.replace(".jsonl", ".memories.jsonl");
+  const memories = await extractFromDirectory(cfg.docsDir, {
+    verbose,
+    workers,
+    outputJsonl: jsonlPath,
+    resume,
+  });
 
   if (memories.length === 0) {
     console.warn("\nNo memories extracted. Check if docs contain actionable content.");
@@ -132,12 +151,13 @@ async function cmdExtractMemories(args: string[]) {
   }
 
   console.log(`\nExtracted ${memories.length} memories total`);
+  console.log(`Incremental JSONL: ${jsonlPath}`);
 
-  // Write JSON backup
+  // Also write combined JSON for convenience
   const jsonPath = cfg.memoriesJsonlPath.replace(".jsonl", ".json");
   await mkdir(dirname(jsonPath), { recursive: true });
   await writeFile(jsonPath, JSON.stringify(memories, null, 2));
-  console.log(`Written JSON to: ${jsonPath}`);
+  console.log(`Combined JSON: ${jsonPath}`);
 
   // Write to LanceDB
   if (!skipLanceDb) {

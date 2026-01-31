@@ -9,9 +9,9 @@
  *   bun run extractor.ts --dir <docs-dir> --out <output.json>
  */
 
-import { readFileSync } from "fs";
-import { readdir, writeFile } from "fs/promises";
-import { join, relative } from "path";
+import { readFileSync, existsSync, appendFileSync } from "fs";
+import { readdir, writeFile, readFile, mkdir } from "fs/promises";
+import { join, relative, dirname } from "path";
 import { $ } from "bun";
 
 // Strong signals - almost always actionable
@@ -287,21 +287,65 @@ async function parallelMap<T, R>(
 }
 
 /**
+ * Load progress file to get already-processed files
+ */
+async function loadProgress(progressFile: string): Promise<Set<string>> {
+  try {
+    const content = await readFile(progressFile, "utf-8");
+    return new Set(content.split("\n").filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
  * Batch extract memories from all .mdx files in a directory
  */
 export async function extractFromDirectory(
   docsDir: string,
-  options: { verbose?: boolean; workers?: number; onProgress?: (current: number, total: number, file: string) => void } = {}
+  options: {
+    verbose?: boolean;
+    workers?: number;
+    outputJsonl?: string;  // Append memories here as we go
+    resume?: boolean;      // Resume from previous run
+    onProgress?: (current: number, total: number, file: string) => void;
+  } = {}
 ): Promise<Memory[]> {
   const concurrency = options.workers ?? 1;
-  const files = await findMdxFiles(docsDir);
+  const allFiles = await findMdxFiles(docsDir);
+  
+  // Resume support: skip already-processed files
+  let files = allFiles;
+  let progressFile: string | undefined;
+  
+  if (options.outputJsonl) {
+    progressFile = options.outputJsonl.replace(".jsonl", ".progress");
+    
+    if (options.resume) {
+      const processed = await loadProgress(progressFile);
+      if (processed.size > 0) {
+        console.log(`Resuming: ${processed.size} files already processed`);
+        files = allFiles.filter(f => !processed.has(f));
+      }
+    }
+  }
   
   if (files.length === 0) {
     console.warn(`No .mdx/.md files found in ${docsDir}`);
     return [];
   }
 
-  console.log(`Found ${files.length} markdown files (${concurrency} worker${concurrency > 1 ? 's' : ''})`);
+  console.log(`Found ${files.length} markdown files to process (${concurrency} worker${concurrency > 1 ? 's' : ''})`);
+  
+  if (files.length === 0 && options.resume) {
+    console.log("All files already processed. Use without --resume to re-extract.");
+    // Load existing memories from JSONL if available
+    if (options.outputJsonl && existsSync(options.outputJsonl)) {
+      const content = await readFile(options.outputJsonl, "utf-8");
+      return content.split("\n").filter(Boolean).map(line => JSON.parse(line));
+    }
+    return [];
+  }
   
   // First pass: analyze all files to find sections to extract
   interface FileWork {
@@ -327,6 +371,11 @@ export async function extractFromDirectory(
 
   console.log(`Found ${totalSections} sections to extract across ${work.length} files`);
   
+  // Ensure output directory exists for JSONL
+  if (options.outputJsonl) {
+    await mkdir(dirname(options.outputJsonl), { recursive: true });
+  }
+  
   if (totalSections === 0) {
     return [];
   }
@@ -345,6 +394,16 @@ export async function extractFromDirectory(
     }
   }
 
+  // Track which files we've fully processed (for resume)
+  const fileCompletedSections = new Map<string, number>();
+  for (const w of work) {
+    fileCompletedSections.set(w.file, 0);
+  }
+  const fileTotalSections = new Map<string, number>();
+  for (const w of work) {
+    fileTotalSections.set(w.file, w.sections.length);
+  }
+
   // Extract with parallelism
   let completed = 0;
   const allMemories: (Memory | null)[] = await parallelMap(
@@ -358,6 +417,20 @@ export async function extractFromDirectory(
         console.log(`[${completed}/${totalSections}] ${item.relPath} - ${item.section.title} ${status}`);
       } else {
         process.stdout.write(`\r[${completed}/${totalSections}] Extracting...`);
+      }
+      
+      // Write memory to JSONL immediately (crash-safe)
+      if (memory && options.outputJsonl) {
+        appendFileSync(options.outputJsonl, JSON.stringify(memory) + "\n");
+      }
+      
+      // Track file completion for progress file
+      const count = (fileCompletedSections.get(item.file) ?? 0) + 1;
+      fileCompletedSections.set(item.file, count);
+      
+      // Mark file as done when all its sections are processed
+      if (progressFile && count === fileTotalSections.get(item.file)) {
+        appendFileSync(progressFile, item.file + "\n");
       }
       
       return memory;
