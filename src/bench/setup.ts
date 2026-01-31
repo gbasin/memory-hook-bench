@@ -57,17 +57,15 @@ export async function setupBench(
     }
   }
 
-  // Copy .next-docs to artifacts/docs
+  // Check for .next-docs (optional - may not exist in all versions)
   const nextDocsDir = join(evalsDir, ".next-docs");
-  if (!(await exists(nextDocsDir))) {
-    console.error(`Error: .next-docs not found in ${evalsDir}`);
-    console.error("This commit may not have the docs directory.");
-    process.exit(3);
+  if (await exists(nextDocsDir)) {
+    console.log(`Copying .next-docs to ${cfg.docsDir}...`);
+    await ensureDir(cfg.artifactsDir);
+    await copyDir(nextDocsDir, cfg.docsDir);
+  } else {
+    console.log("Note: .next-docs not found - will use codemod for AGENTS.md generation");
   }
-
-  console.log(`Copying .next-docs to ${cfg.docsDir}...`);
-  await ensureDir(cfg.artifactsDir);
-  await copyDir(nextDocsDir, cfg.docsDir);
 
   // Get the actual commit SHA
   const shaResult = await run("git", ["rev-parse", "HEAD"], { cwd: evalsDir });

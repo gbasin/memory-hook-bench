@@ -31,17 +31,14 @@ export const memoryNoRerank: BenchScenario = {
   },
 
   buildEnv(base, paths, _cfg) {
+    // Use default Claude config for auth, project-level .claude/settings.json for hooks
     // Do NOT pass ANTHROPIC_API_KEY - forces fallback to threshold
     const env: NodeJS.ProcessEnv = {
       ...base,
-      CLAUDE_CONFIG_DIR: paths.claudeConfigDir,
-      HOME: paths.root,
       RERANK_PROVIDER: "claude",
-      // Explicitly remove API key to disable reranking
+      // Point memory-hook to workspace memories
+      MEMORY_HOOK_DATA_DIR: paths.root,
     };
-
-    // Point memory-hook to workspace memories
-    env.MEMORY_HOOK_DATA_DIR = paths.root;
 
     // Remove ANTHROPIC_API_KEY to disable reranking
     delete env.ANTHROPIC_API_KEY;

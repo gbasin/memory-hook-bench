@@ -6,7 +6,7 @@ import { run } from "../lib/proc";
 import { readText, exists } from "../lib/fs";
 import type { BenchConfig, EvalResult } from "../lib/types";
 import type { EvalSpec } from "./evals";
-import { getWorkspacePaths, prepareFreshWorkspace } from "./workspace";
+import { getWorkspacePaths, prepareFreshWorkspace, writeVitestConfig } from "./workspace";
 import { getConfig, type ConfigName } from "./configs";
 
 interface RunEvalOptions {
@@ -99,24 +99,51 @@ export async function runSingleEval(
     agentResult = await runClaudeAgent(paths.root, prompt, cfg.evalModel, env, opts);
   }
 
+  // Install dependencies
+  console.log(`  [${evalSpec.id}/${configName}] Installing dependencies...`);
+  const installResult = await run("bun", ["install"], {
+    cwd: paths.root,
+    env,
+    timeoutMs: 120_000,
+  });
+  if (installResult.code !== 0 && opts.verbose) {
+    console.error(`    Install warning: ${installResult.stderr.slice(0, 200)}`);
+  }
+
   // Run validations
   console.log(`  [${evalSpec.id}/${configName}] Running validations...`);
 
   const buildResult = await runValidation(
-    paths.root, "bun", ["run", "build"], env, 120_000
+    paths.root, "bun", ["run", "build"], env, 180_000
   );
 
-  const lintResult = await runValidation(
-    paths.root, "bun", ["run", "lint"], env, 60_000
-  );
+  // Check if lint script exists before running
+  let lintResult: { pass: boolean; error?: string } = { pass: true };
+  const pkgPath = join(paths.root, "package.json");
+  if (await exists(pkgPath)) {
+    try {
+      const pkg = JSON.parse(await readText(pkgPath));
+      if (pkg.scripts?.lint) {
+        lintResult = await runValidation(
+          paths.root, "bun", ["run", "lint"], env, 60_000
+        );
+      }
+    } catch {
+      // Skip lint if we can't parse package.json
+    }
+  }
 
-  // Look for EVAL.ts
+  // Look for EVAL.ts - run with vitest
   const evalTsPath = join(paths.root, "EVAL.ts");
   let testResult: { pass: boolean; error?: string };
   
   if (await exists(evalTsPath)) {
+    // Write vitest config that includes EVAL.ts
+    await writeVitestConfig(paths.root);
+    
+    // Run with vitest via bun
     testResult = await runValidation(
-      paths.root, "bun", ["test", "EVAL.ts"], env, 120_000
+      paths.root, "bunx", ["vitest", "run", "EVAL.ts"], env, 120_000
     );
   } else {
     // No EVAL.ts, skip test

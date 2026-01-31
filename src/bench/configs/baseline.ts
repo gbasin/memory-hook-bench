@@ -12,11 +12,8 @@ export const baseline: BenchScenario = {
     await writeClaudeSettings(paths.claudeConfigDir, {});
   },
 
-  buildEnv(base, paths, _cfg) {
-    return {
-      ...base,
-      CLAUDE_CONFIG_DIR: paths.claudeConfigDir,
-      HOME: paths.root,
-    };
+  buildEnv(base, _paths, _cfg) {
+    // Use default Claude config for auth, project-level .claude/settings.json for hooks
+    return { ...base };
   },
 };

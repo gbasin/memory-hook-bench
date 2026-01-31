@@ -3,6 +3,7 @@
  */
 import { join } from "path";
 import { ensureDir, rimraf, copyDir, exists, writeText } from "../lib/fs";
+import { run } from "../lib/proc";
 import type { BenchConfig } from "../lib/types";
 
 export interface WorkspacePaths {
@@ -41,6 +42,11 @@ export async function prepareFreshWorkspace(
   const claudeMd = join(paths.root, "CLAUDE.md");
   if (await exists(agentsMd)) await rimraf(agentsMd);
   if (await exists(claudeMd)) await rimraf(claudeMd);
+
+  // Initialize git repo (Claude Code needs this)
+  await run("git", ["init"], { cwd: paths.root, timeoutMs: 10_000 });
+  await run("git", ["add", "."], { cwd: paths.root, timeoutMs: 10_000 });
+  await run("git", ["commit", "-m", "Initial eval setup"], { cwd: paths.root, timeoutMs: 10_000 });
 }
 
 export async function writeClaudeSettings(
@@ -49,6 +55,20 @@ export async function writeClaudeSettings(
 ): Promise<void> {
   const settingsPath = join(claudeConfigDir, "settings.json");
   await writeText(settingsPath, JSON.stringify(settings, null, 2));
+}
+
+export async function writeVitestConfig(workspaceRoot: string): Promise<void> {
+  // Write vitest config that includes EVAL.ts
+  const vitestConfig = `import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    include: ['EVAL.ts', '**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+  },
+});
+`;
+  const configPath = join(workspaceRoot, "vitest.config.ts");
+  await writeText(configPath, vitestConfig);
 }
 
 export async function copyMemoriesDb(

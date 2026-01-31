@@ -31,16 +31,13 @@ export const memoryHook: BenchScenario = {
   },
 
   buildEnv(base, paths, _cfg) {
-    // Pass through ANTHROPIC_API_KEY for reranking
+    // Use default Claude config for auth, project-level .claude/settings.json for hooks
     const env: NodeJS.ProcessEnv = {
       ...base,
-      CLAUDE_CONFIG_DIR: paths.claudeConfigDir,
-      HOME: paths.root,
       RERANK_PROVIDER: "claude",
+      // Point memory-hook to workspace memories
+      MEMORY_HOOK_DATA_DIR: paths.root,
     };
-
-    // Point memory-hook to workspace memories
-    env.MEMORY_HOOK_DATA_DIR = paths.root;
 
     // Pass through API key for reranking
     if (process.env.ANTHROPIC_API_KEY) {
