@@ -261,12 +261,39 @@ async function findMdxFiles(dir: string): Promise<string[]> {
 }
 
 /**
+ * Run tasks with limited concurrency
+ */
+async function parallelMap<T, R>(
+  items: T[],
+  fn: (item: T, index: number) => Promise<R>,
+  concurrency: number
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await fn(items[index], index);
+    }
+  }
+
+  const workers = Array(Math.min(concurrency, items.length))
+    .fill(null)
+    .map(() => worker());
+
+  await Promise.all(workers);
+  return results;
+}
+
+/**
  * Batch extract memories from all .mdx files in a directory
  */
 export async function extractFromDirectory(
   docsDir: string,
-  options: { verbose?: boolean; onProgress?: (current: number, total: number, file: string) => void } = {}
+  options: { verbose?: boolean; workers?: number; onProgress?: (current: number, total: number, file: string) => void } = {}
 ): Promise<Memory[]> {
+  const concurrency = options.workers ?? 1;
   const files = await findMdxFiles(docsDir);
   
   if (files.length === 0) {
@@ -274,62 +301,75 @@ export async function extractFromDirectory(
     return [];
   }
 
-  console.log(`Found ${files.length} markdown files`);
+  console.log(`Found ${files.length} markdown files (${concurrency} worker${concurrency > 1 ? 's' : ''})`);
   
-  const allMemories: Memory[] = [];
+  // First pass: analyze all files to find sections to extract
+  interface FileWork {
+    file: string;
+    relPath: string;
+    sections: Section[];
+  }
   
-  for (let i = 0; i < files.length; i++) {
-    const file = files[i];
+  const work: FileWork[] = [];
+  let totalSections = 0;
+  
+  for (const file of files) {
     const relPath = relative(docsDir, file);
-    
-    options.onProgress?.(i + 1, files.length, relPath);
-    
-    if (options.verbose) {
-      console.log(`\n[${i + 1}/${files.length}] ${relPath}`);
-    } else {
-      process.stdout.write(`\r[${i + 1}/${files.length}] Processing ${relPath.slice(0, 50).padEnd(50)}...`);
-    }
-
-    // First analyze to see if there are any sections worth extracting
     const content = readFileSync(file, "utf-8");
     const sections = parseMarkdownSections(content);
     const toExtract = sections.filter(s => shouldExtract(s).extract);
     
-    if (toExtract.length === 0) {
-      if (options.verbose) {
-        console.log(`  → 0 actionable sections, skipping`);
-      }
-      continue;
-    }
-
-    if (options.verbose) {
-      console.log(`  → ${toExtract.length} actionable sections`);
-    }
-
-    // Extract memories
-    for (const section of toExtract) {
-      if (options.verbose) {
-        process.stdout.write(`    ${section.title}... `);
-      }
-      
-      const memory = await extractMemory(section, file);
-      
-      if (memory) {
-        allMemories.push(memory);
-        if (options.verbose) {
-          console.log("✓");
-        }
-      } else if (options.verbose) {
-        console.log("⊘");
-      }
+    if (toExtract.length > 0) {
+      work.push({ file, relPath, sections: toExtract });
+      totalSections += toExtract.length;
     }
   }
+
+  console.log(`Found ${totalSections} sections to extract across ${work.length} files`);
+  
+  if (totalSections === 0) {
+    return [];
+  }
+
+  // Flatten to section-level work items for better parallelization
+  interface SectionWork {
+    file: string;
+    relPath: string;
+    section: Section;
+  }
+  
+  const sectionWork: SectionWork[] = [];
+  for (const w of work) {
+    for (const section of w.sections) {
+      sectionWork.push({ file: w.file, relPath: w.relPath, section });
+    }
+  }
+
+  // Extract with parallelism
+  let completed = 0;
+  const allMemories: (Memory | null)[] = await parallelMap(
+    sectionWork,
+    async (item, _index) => {
+      const memory = await extractMemory(item.section, item.file);
+      completed++;
+      
+      if (options.verbose) {
+        const status = memory ? "✓" : "⊘";
+        console.log(`[${completed}/${totalSections}] ${item.relPath} - ${item.section.title} ${status}`);
+      } else {
+        process.stdout.write(`\r[${completed}/${totalSections}] Extracting...`);
+      }
+      
+      return memory;
+    },
+    concurrency
+  );
 
   if (!options.verbose) {
     console.log(); // newline after progress
   }
 
-  return allMemories;
+  return allMemories.filter((m): m is Memory => m !== null);
 }
 
 // CLI entry point

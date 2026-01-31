@@ -49,6 +49,7 @@ Options (setup-docs):
 
 Options (extract-memories):
   --verbose, -v              Show detailed progress per file/section
+  --workers <n>              Parallel workers for extraction (default: 1)
   --skip-lancedb             Only extract JSON, don't embed to LanceDB
 
 Options (run):
@@ -96,6 +97,17 @@ async function cmdExtractMemories(args: string[]) {
   const cfg = loadBenchConfig();
   const verbose = args.includes("--verbose") || args.includes("-v");
   const skipLanceDb = args.includes("--skip-lancedb");
+  
+  let workers = 1;
+  const workersIdx = args.indexOf("--workers");
+  if (workersIdx !== -1 && args[workersIdx + 1]) {
+    workers = parseInt(args[workersIdx + 1], 10);
+    if (isNaN(workers) || workers < 1) workers = 1;
+    if (workers > 8) {
+      console.warn(`Warning: ${workers} workers may overwhelm Claude CLI, capping at 8`);
+      workers = 8;
+    }
+  }
 
   // Check if docs exist
   if (!existsSync(cfg.docsDir)) {
@@ -112,7 +124,7 @@ async function cmdExtractMemories(args: string[]) {
   console.log(`${"=".repeat(60)}\n`);
 
   // Extract memories from all docs
-  const memories = await extractFromDirectory(cfg.docsDir, { verbose });
+  const memories = await extractFromDirectory(cfg.docsDir, { verbose, workers });
 
   if (memories.length === 0) {
     console.warn("\nNo memories extracted. Check if docs contain actionable content.");
