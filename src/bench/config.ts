@@ -10,6 +10,8 @@ export function loadBenchConfig(overrides: Partial<BenchConfig> = {}): BenchConf
   const defaults: BenchConfig = {
     nextEvalsRepo: "https://github.com/vercel/next-evals-oss.git",
     nextEvalsCommit: process.env.NEXT_EVALS_COMMIT || "",
+    nextjsRepo: "https://github.com/vercel/next.js.git",
+    nextjsDocsRef: process.env.NEXTJS_DOCS_REF || "v16.1.0",
     evalModel: "claude-opus-4-5-20251101",
     workRoot: "/tmp/memory-hook-bench",
     cacheDir: join(REPO_ROOT, ".cache"),

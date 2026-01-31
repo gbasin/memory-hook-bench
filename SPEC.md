@@ -19,7 +19,7 @@ Memory-hook's LLM reranking can close the gap with AGENTS.md while remaining dom
 
 | Decision | Choice |
 |----------|--------|
-| Docs source | `.next-docs/` from next-evals-oss |
+| Docs source | `docs/` from `vercel/next.js` (pin to tag, e.g. v16.1.0) |
 | Eval suite | `vercel/next-evals-oss` (pin to specific commit at setup) |
 | Eval model | `claude-opus-4-5-20251101` |
 | Embedding model | MiniLM-L6-v2 (same as memory-hook) |
@@ -166,10 +166,10 @@ interface EvalResult {
 
 ## Phases
 
-1. **Setup**: Scaffold projects, clone evals (pin commit), copy `.next-docs/`
-2. **docs-to-memories**: Implement extraction, generate memories
-3. **Benchmark runner**: Implement config switching, eval execution, result collection
-4. **Run**: Pilot with 5 evals, then full 50 evals × 4 configs
+1. **Setup**: Clone evals (pin commit), fetch Next.js docs (pin tag)
+2. **docs-to-memories**: Extract memories from docs using Claude headless
+3. **Benchmark runner**: Config switching, eval execution, result collection
+4. **Run**: Pilot with 5 evals, then full 20 evals × 4 configs
 
 ---
 

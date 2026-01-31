@@ -8,8 +8,11 @@ Benchmark **memory-hook** (on-demand context injection) against **AGENTS.md** (s
 # Install dependencies
 bun install
 
-# Setup: clone next-evals-oss and copy docs
+# Setup: clone next-evals-oss (eval suite)
 bun run bench setup --commit <sha>
+
+# Fetch Next.js docs (for memory extraction)
+bun run bench setup-docs --ref v16.1.0
 
 # Extract memories from docs
 bun run bench extract
@@ -25,11 +28,28 @@ bun run bench results
 
 ### `setup --commit <sha>`
 
-Clones `vercel/next-evals-oss` and copies `.next-docs/` to `artifacts/docs/`.
+Clones `vercel/next-evals-oss` and checks out the specified commit.
 
 ```bash
 bun run bench setup --commit abc123
 ```
+
+### `setup-docs [--ref <tag>]`
+
+Fetches Next.js documentation from `vercel/next.js` using sparse checkout.
+
+```bash
+# Fetch v16.1.0 docs (default)
+bun run bench setup-docs
+
+# Fetch specific version
+bun run bench setup-docs --ref v16.1.0
+
+# Force re-fetch
+bun run bench setup-docs --ref canary --force
+```
+
+Docs are copied to `artifacts/docs/`.
 
 ### `extract`
 

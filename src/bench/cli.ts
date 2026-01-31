@@ -13,7 +13,7 @@
  */
 import { join } from "path";
 import { loadBenchConfig } from "./config";
-import { setupBench } from "./setup";
+import { setupBench, setupDocs } from "./setup";
 import { discoverEvals, filterEvals } from "./evals";
 import { runBench } from "./runner";
 import { writeResults, loadLatestResults, formatMarkdownTable, computePassRates } from "./results";
@@ -25,7 +25,8 @@ function printUsage() {
 memory-hook-bench - Benchmark memory-hook vs AGENTS.md
 
 Commands:
-  setup --commit <sha>     Clone next-evals-oss and copy docs
+  setup --commit <sha>     Clone next-evals-oss (eval suite)
+  setup-docs [--ref tag]   Fetch Next.js docs (for memory extraction)
   extract [options]        Extract memories from docs
   run --all                Run all evals with all configs
   run --evals 001,002      Run specific evals
@@ -34,9 +35,14 @@ Commands:
 
 Environment:
   NEXT_EVALS_COMMIT        Default commit for setup
+  NEXTJS_DOCS_REF          Default ref for setup-docs (default: v16.1.0)
   MEMORY_HOOK_PATH         Path to memory-hook package
   CLAUDE_PATH              Path to claude CLI (default: claude)
   ANTHROPIC_API_KEY        Required for reranking
+
+Options (setup-docs):
+  --ref <tag>              Git ref to fetch (tag, branch, or SHA)
+  --force                  Re-fetch even if docs exist
 
 Options (run):
   --all                    Run all evals and configs
@@ -64,6 +70,23 @@ async function cmdSetup(args: string[]) {
 
   const cfg = loadBenchConfig();
   await setupBench(cfg, { commit });
+}
+
+async function cmdSetupDocs(args: string[]) {
+  let ref: string | undefined;
+  let force = false;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--ref") {
+      ref = args[++i];
+    } else if (arg === "--force") {
+      force = true;
+    }
+  }
+
+  const cfg = loadBenchConfig();
+  await setupDocs(cfg, { ref, force });
 }
 
 async function cmdExtract(args: string[]) {
@@ -238,6 +261,9 @@ async function main() {
   switch (command) {
     case "setup":
       await cmdSetup(cmdArgs);
+      break;
+    case "setup-docs":
+      await cmdSetupDocs(cmdArgs);
       break;
     case "extract":
       await cmdExtract(cmdArgs);

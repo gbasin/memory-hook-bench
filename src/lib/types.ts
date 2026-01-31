@@ -29,6 +29,8 @@ export interface EvalResult {
 export interface BenchConfig {
   nextEvalsRepo: string;
   nextEvalsCommit: string;
+  nextjsRepo: string;
+  nextjsDocsRef: string;
   evalModel: string;
   workRoot: string;
   cacheDir: string;
