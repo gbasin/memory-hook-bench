@@ -1,131 +1,126 @@
 # memory-hook-bench
 
-Benchmark **memory-hook** (on-demand context injection) against **AGENTS.md** (static context) using Vercel's Next.js eval suite.
+Benchmark for comparing **memory-hook** (on-demand context injection) against **baseline** (no context) using Vercel's Next.js eval suite.
 
-## Quick Start
+## Results
+
+| Config | Pass Rate |
+|--------|-----------|
+| memory-hook | 100% |
+| baseline | 0% |
+
+*Tested on `agent-000-app-router-migration-simple` with claude-opus-4-5-20251101*
+
+## How It Works
+
+1. **Extract memories** from Next.js docs using markdown-aware parsing + LLM
+2. **Embed** memories to LanceDB with MiniLM-L6-v2
+3. **Run evals** with memory-hook injecting relevant context at tool-use time
+
+### Memory Extraction
+
+The extractor parses markdown structure (H2/H3/H4 headers) and uses heuristics to identify actionable sections:
+
+- **Strong signals**: "Good to know", "Warning", "don't", "avoid"
+- **Medium signals**: Code blocks + "you can", "for example"
+
+Each section is processed by an LLM to extract:
+```json
+{
+  "trigger": "keywords for semantic search",
+  "rule": "actionable advice to inject",
+  "example": "code snippet (optional)"
+}
+```
+
+### Memory Injection
+
+When the agent reads/writes files, memory-hook:
+1. Embeds the file content as a query
+2. Searches LanceDB for relevant memories
+3. Reranks with gpt-5.1-codex-mini
+4. Injects top matches into the agent's context
+
+## Setup
 
 ```bash
-# Install dependencies
+# Clone
+git clone https://github.com/gbasin/memory-hook-bench
+cd memory-hook-bench
 bun install
 
-# Setup: clone next-evals-oss (eval suite)
-bun run bench setup --commit <sha>
+# Fetch eval suite
+bun run src/bench/cli.ts setup --commit <sha>
 
-# Fetch Next.js docs (for memory extraction)
-bun run bench setup-docs --ref v16.1.0
+# Fetch Next.js docs
+bun run src/bench/cli.ts setup-docs --ref v16.1.0
+```
 
-# Extract memories from docs
-bun run bench extract
+## Usage
 
-# Run benchmark (all evals, all configs)
-bun run bench run --all
+### Extract Memories
+
+```bash
+# Sequential (slow but reliable)
+bun run src/bench/cli.ts extract-memories
+
+# Parallel (faster)
+bun run src/bench/cli.ts extract-memories --workers 4
+
+# Verbose output
+bun run src/bench/cli.ts extract-memories --verbose
+```
+
+### Run Benchmarks
+
+```bash
+# Run specific eval
+bun run src/bench/cli.ts run --evals agent-000 --configs baseline,memory-hook
+
+# Run all evals
+bun run src/bench/cli.ts run --all
 
 # View results
-bun run bench results
+bun run src/bench/cli.ts results
 ```
 
-## Commands
+## Project Structure
 
-### `setup --commit <sha>`
-
-Clones `vercel/next-evals-oss` and checks out the specified commit.
-
-```bash
-bun run bench setup --commit abc123
+```
+src/
+  bench/
+    cli.ts           # Main CLI entry point
+    config.ts        # Configuration
+    setup.ts         # Repo cloning, docs fetching
+    runner.ts        # Eval execution
+    evals.ts         # Eval discovery
+    configs.ts       # Config definitions (baseline, memory-hook)
+    results.ts       # Result aggregation
+  docs-to-memories/
+    extractor.ts     # Markdown-aware extraction with heuristics + LLM
+    to-lancedb.ts    # Embedding and LanceDB storage
+artifacts/
+  docs/              # Fetched Next.js documentation
+  memories/          # Extracted memories (LanceDB + JSON)
+  results/           # Benchmark results
 ```
 
-### `setup-docs [--ref <tag>]`
+## Configuration
 
-Fetches Next.js documentation from `vercel/next.js` using sparse checkout.
-
-```bash
-# Fetch v16.1.0 docs (default)
-bun run bench setup-docs
-
-# Fetch specific version
-bun run bench setup-docs --ref v16.1.0
-
-# Force re-fetch
-bun run bench setup-docs --ref canary --force
-```
-
-Docs are copied to `artifacts/docs/`.
-
-### `extract`
-
-Extracts memories from docs using Claude Code headless (Opus 4.5).
-
-```bash
-bun run bench extract
-bun run bench extract --model claude-sonnet-4-20250514 --concurrency 5
-```
-
-### `run`
-
-Runs evals across configs.
-
-```bash
-# All evals, all configs
-bun run bench run --all
-
-# Specific evals
-bun run bench run --evals 001,002,003
-
-# Specific configs
-bun run bench run --configs baseline,memory-hook
-
-# With options
-bun run bench run --all --timeout 900000 --verbose
-```
-
-### `results`
-
-Shows latest benchmark results.
-
-```bash
-bun run bench results
-```
-
-## Configs
-
-| Config | Description |
-|--------|-------------|
-| `baseline` | No docs, no hook |
-| `agents-md` | AGENTS.md generated from memories |
-| `memory-hook` | Hook active with Haiku reranking |
-| `memory-no-rerank` | Hook active, vector search only |
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `NEXT_EVALS_COMMIT` | Default commit for setup |
+| Environment Variable | Description |
+|---------------------|-------------|
+| `NEXT_EVALS_COMMIT` | Commit SHA for next-evals-oss |
+| `NEXTJS_DOCS_REF` | Git ref for Next.js docs (default: v16.1.0) |
 | `MEMORY_HOOK_PATH` | Path to memory-hook package |
-| `CLAUDE_PATH` | Path to claude CLI |
-| `ANTHROPIC_API_KEY` | Required for reranking |
+| `CLAUDE_PATH` | Path to claude CLI (default: claude) |
 
-## Output
+## Dependencies
 
-Results are written to `artifacts/results/<run-id>/`:
-- `results.json` - Raw results data
-- `report.md` - Markdown summary
+- [memory-hook](https://github.com/gbasin/co11y/tree/main/packages/memory-hook) - Context injection hook
+- [next-evals-oss](https://github.com/vercel/next-evals-oss) - Eval suite
+- [LanceDB](https://lancedb.com/) - Vector database
+- [MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) - Embedding model
 
-## docs-to-memories CLI
+## License
 
-Standalone tool for extracting memories from any documentation.
-
-```bash
-# Extract to JSONL
-bun run extract extract ./docs --output memories.json
-
-# Extract to LanceDB
-bun run extract extract ./docs --output lancedb://./memories.lance
-
-# Options
-bun run extract extract ./docs --output out.json \
-  --model claude-opus-4-5-20251101 \
-  --concurrency 3 \
-  --chunk-size 8000 \
-  --overlap 200 \
-  --verbose
-```
+MIT
