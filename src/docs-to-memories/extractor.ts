@@ -1,13 +1,17 @@
 #!/usr/bin/env bun
 /**
- * Prototype: Markdown-aware extraction with heuristics + LLM
+ * Markdown-aware memory extraction with heuristics + LLM
  * 
- * Usage:
- *   bun run src/docs-to-memories/prototype.ts <file.mdx>
- *   bun run src/docs-to-memories/prototype.ts <file.mdx> --extract
+ * Single file:
+ *   bun run extractor.ts <file.mdx> [--extract]
+ *
+ * Batch (all .mdx files):
+ *   bun run extractor.ts --dir <docs-dir> --out <output.json>
  */
 
 import { readFileSync } from "fs";
+import { readdir, writeFile } from "fs/promises";
+import { join, relative } from "path";
 import { $ } from "bun";
 
 // Strong signals - almost always actionable
@@ -41,7 +45,7 @@ const SKIP_PATTERNS = [
   /^setup$/i,
 ];
 
-interface Section {
+export interface Section {
   level: number;
   title: string;
   lineStart: number;
@@ -49,7 +53,7 @@ interface Section {
   content: string;
 }
 
-interface Memory {
+export interface Memory {
   trigger: string;
   rule: string;
   source: string;
@@ -57,7 +61,7 @@ interface Memory {
   example?: string;
 }
 
-function parseMarkdownSections(content: string): Section[] {
+export function parseMarkdownSections(content: string): Section[] {
   const lines = content.split("\n");
   const sections: Section[] = [];
   let currentSection: Section | null = null;
@@ -98,7 +102,7 @@ function parseMarkdownSections(content: string): Section[] {
   return sections;
 }
 
-function shouldExtract(section: Section): { extract: boolean; reason: string } {
+export function shouldExtract(section: Section): { extract: boolean; reason: string } {
   const content = section.content;
   const title = section.title;
 
@@ -140,7 +144,7 @@ function shouldExtract(section: Section): { extract: boolean; reason: string } {
   return { extract: false, reason: "no signals" };
 }
 
-async function extractMemory(section: Section, docPath: string): Promise<Memory | null> {
+export async function extractMemory(section: Section, docPath: string): Promise<Memory | null> {
   const prompt = `You are extracting an actionable coding pattern from documentation.
 
 Document: ${docPath}
@@ -204,13 +208,170 @@ Output only valid JSON or the word SKIP if not actionable.`;
   }
 }
 
+/**
+ * Extract memories from a single file
+ */
+export async function extractFromFile(
+  filePath: string,
+  options: { verbose?: boolean } = {}
+): Promise<Memory[]> {
+  const content = readFileSync(filePath, "utf-8");
+  const sections = parseMarkdownSections(content);
+  
+  const toExtract = sections.filter(s => shouldExtract(s).extract);
+  
+  if (options.verbose) {
+    console.log(`  ${toExtract.length}/${sections.length} sections to extract`);
+  }
+
+  const memories: Memory[] = [];
+  
+  for (const section of toExtract) {
+    const memory = await extractMemory(section, filePath);
+    if (memory) {
+      memories.push(memory);
+    }
+  }
+
+  return memories;
+}
+
+/**
+ * Recursively find all .mdx files in a directory
+ */
+async function findMdxFiles(dir: string): Promise<string[]> {
+  const files: string[] = [];
+  
+  async function walk(currentDir: string) {
+    const entries = await readdir(currentDir, { withFileTypes: true });
+    
+    for (const entry of entries) {
+      const fullPath = join(currentDir, entry.name);
+      
+      if (entry.isDirectory()) {
+        await walk(fullPath);
+      } else if (entry.name.endsWith(".mdx") || entry.name.endsWith(".md")) {
+        files.push(fullPath);
+      }
+    }
+  }
+  
+  await walk(dir);
+  return files.sort();
+}
+
+/**
+ * Batch extract memories from all .mdx files in a directory
+ */
+export async function extractFromDirectory(
+  docsDir: string,
+  options: { verbose?: boolean; onProgress?: (current: number, total: number, file: string) => void } = {}
+): Promise<Memory[]> {
+  const files = await findMdxFiles(docsDir);
+  
+  if (files.length === 0) {
+    console.warn(`No .mdx/.md files found in ${docsDir}`);
+    return [];
+  }
+
+  console.log(`Found ${files.length} markdown files`);
+  
+  const allMemories: Memory[] = [];
+  
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const relPath = relative(docsDir, file);
+    
+    options.onProgress?.(i + 1, files.length, relPath);
+    
+    if (options.verbose) {
+      console.log(`\n[${i + 1}/${files.length}] ${relPath}`);
+    } else {
+      process.stdout.write(`\r[${i + 1}/${files.length}] Processing ${relPath.slice(0, 50).padEnd(50)}...`);
+    }
+
+    // First analyze to see if there are any sections worth extracting
+    const content = readFileSync(file, "utf-8");
+    const sections = parseMarkdownSections(content);
+    const toExtract = sections.filter(s => shouldExtract(s).extract);
+    
+    if (toExtract.length === 0) {
+      if (options.verbose) {
+        console.log(`  → 0 actionable sections, skipping`);
+      }
+      continue;
+    }
+
+    if (options.verbose) {
+      console.log(`  → ${toExtract.length} actionable sections`);
+    }
+
+    // Extract memories
+    for (const section of toExtract) {
+      if (options.verbose) {
+        process.stdout.write(`    ${section.title}... `);
+      }
+      
+      const memory = await extractMemory(section, file);
+      
+      if (memory) {
+        allMemories.push(memory);
+        if (options.verbose) {
+          console.log("✓");
+        }
+      } else if (options.verbose) {
+        console.log("⊘");
+      }
+    }
+  }
+
+  if (!options.verbose) {
+    console.log(); // newline after progress
+  }
+
+  return allMemories;
+}
+
+// CLI entry point
 async function main() {
   const args = process.argv.slice(2);
+  
+  // Batch mode: --dir <docs-dir> --out <output.json>
+  const dirIndex = args.indexOf("--dir");
+  const outIndex = args.indexOf("--out");
+  
+  if (dirIndex !== -1) {
+    const docsDir = args[dirIndex + 1];
+    const outFile = outIndex !== -1 ? args[outIndex + 1] : "memories.json";
+    const verbose = args.includes("--verbose") || args.includes("-v");
+    
+    if (!docsDir) {
+      console.error("Usage: bun run extractor.ts --dir <docs-dir> --out <output.json>");
+      process.exit(1);
+    }
+
+    console.log(`\nExtracting memories from: ${docsDir}`);
+    console.log(`Output: ${outFile}\n`);
+
+    const memories = await extractFromDirectory(docsDir, { verbose });
+
+    console.log(`\n${"=".repeat(60)}`);
+    console.log(`TOTAL: ${memories.length} memories extracted`);
+    console.log(`${"=".repeat(60)}\n`);
+
+    await writeFile(outFile, JSON.stringify(memories, null, 2));
+    console.log(`Written to: ${outFile}`);
+    return;
+  }
+
+  // Single file mode
   const file = args.find(a => !a.startsWith("-"));
   const doExtract = args.includes("--extract");
 
   if (!file) {
-    console.error("Usage: bun run prototype.ts <file.mdx> [--extract]");
+    console.error(`Usage:
+  Single file: bun run extractor.ts <file.mdx> [--extract]
+  Batch:       bun run extractor.ts --dir <docs-dir> --out <output.json> [--verbose]`);
     process.exit(1);
   }
 
@@ -242,7 +403,6 @@ async function main() {
     return;
   }
 
-  // Extract memories sequentially (CLI is slow, parallel might overwhelm)
   console.log("Extracting memories...\n");
   const memories: Memory[] = [];
   
@@ -271,11 +431,12 @@ async function main() {
     console.log();
   }
 
-  // Write to file
   const outFile = file.replace(/\.mdx?$/, ".memories.json");
-  const fs = await import("fs/promises");
-  await fs.writeFile(outFile, JSON.stringify(memories, null, 2));
+  await writeFile(outFile, JSON.stringify(memories, null, 2));
   console.log(`Written to: ${outFile}`);
 }
 
-main().catch(console.error);
+// Only run main if executed directly
+if (import.meta.main) {
+  main().catch(console.error);
+}

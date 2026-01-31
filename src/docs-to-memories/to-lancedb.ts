@@ -2,20 +2,13 @@
 /**
  * Convert extracted memories to LanceDB format with embeddings
  * 
- * Usage: bun run src/docs-to-memories/to-lancedb.ts <memories.json> <output.lance>
+ * Usage: bun run to-lancedb.ts <memories.json> <output-dir>
  */
 import * as lancedb from "@lancedb/lancedb";
 import { pipeline, type FeatureExtractionPipeline } from "@xenova/transformers";
 import { readFileSync } from "fs";
 import { randomUUID } from "crypto";
-
-interface ExtractedMemory {
-  trigger: string;
-  rule: string;
-  source: string;
-  section: string;
-  example?: string;
-}
+import type { Memory } from "./extractor";
 
 interface LanceMemory {
   [key: string]: unknown;
@@ -36,24 +29,20 @@ async function embed(text: string): Promise<number[]> {
   return Array.from(result.data as Float32Array);
 }
 
-async function main() {
-  const [inputFile, outputPath] = process.argv.slice(2);
+/**
+ * Embed memories and write to LanceDB
+ */
+export async function writeToLanceDB(
+  memories: Memory[],
+  outputDir: string,
+  options: { onProgress?: (current: number, total: number) => void } = {}
+): Promise<void> {
+  const lanceMemories: LanceMemory[] = [];
   
-  if (!inputFile || !outputPath) {
-    console.error("Usage: bun run to-lancedb.ts <memories.json> <output.lance>");
-    process.exit(1);
-  }
-
-  // Load extracted memories
-  const raw = JSON.parse(readFileSync(inputFile, "utf-8")) as ExtractedMemory[];
-  console.log(`Loaded ${raw.length} memories from ${inputFile}`);
-
-  // Convert and embed
-  const memories: LanceMemory[] = [];
-  
-  for (let i = 0; i < raw.length; i++) {
-    const m = raw[i];
-    process.stdout.write(`\rEmbedding ${i + 1}/${raw.length}...`);
+  for (let i = 0; i < memories.length; i++) {
+    const m = memories[i];
+    options.onProgress?.(i + 1, memories.length);
+    process.stdout.write(`\rEmbedding ${i + 1}/${memories.length}...`);
     
     // Build context with optional example
     let context = m.rule;
@@ -65,7 +54,7 @@ async function main() {
     // Embed the trigger (what we search against)
     const vector = await embed(m.trigger);
     
-    memories.push({
+    lanceMemories.push({
       id: randomUUID(),
       text: m.trigger,
       context,
@@ -76,8 +65,9 @@ async function main() {
   console.log("\n");
 
   // Write to LanceDB
-  console.log(`Writing to ${outputPath}...`);
-  const db = await lancedb.connect(outputPath);
+  const dbPath = `${outputDir}/memories.lance`;
+  console.log(`Writing to ${dbPath}...`);
+  const db = await lancedb.connect(dbPath);
   
   // Drop existing table if present
   const tables = await db.tableNames();
@@ -85,8 +75,27 @@ async function main() {
     await db.dropTable("memories");
   }
   
-  await db.createTable("memories", memories);
-  console.log(`Done! ${memories.length} memories written.`);
+  await db.createTable("memories", lanceMemories);
+  console.log(`Done! ${lanceMemories.length} memories written.`);
 }
 
-main().catch(console.error);
+// CLI entry point
+async function main() {
+  const [inputFile, outputDir] = process.argv.slice(2);
+  
+  if (!inputFile || !outputDir) {
+    console.error("Usage: bun run to-lancedb.ts <memories.json> <output-dir>");
+    process.exit(1);
+  }
+
+  // Load extracted memories
+  const raw = JSON.parse(readFileSync(inputFile, "utf-8")) as Memory[];
+  console.log(`Loaded ${raw.length} memories from ${inputFile}`);
+
+  await writeToLanceDB(raw, outputDir);
+}
+
+// Only run main if executed directly
+if (import.meta.main) {
+  main().catch(console.error);
+}

@@ -6,56 +6,59 @@
  * 
  * Usage:
  *   memory-hook-bench setup --commit <sha>
- *   memory-hook-bench extract
+ *   memory-hook-bench setup-docs [--ref tag]
+ *   memory-hook-bench extract-memories [--verbose]
  *   memory-hook-bench run --all
  *   memory-hook-bench run --evals 001,002 --configs baseline,memory-hook
  *   memory-hook-bench results
  */
-import { join } from "path";
+import { join, dirname } from "path";
+import { existsSync } from "fs";
+import { mkdir, writeFile } from "fs/promises";
 import { loadBenchConfig } from "./config";
 import { setupBench, setupDocs } from "./setup";
 import { discoverEvals, filterEvals } from "./evals";
 import { runBench } from "./runner";
 import { writeResults, loadLatestResults, formatMarkdownTable, computePassRates } from "./results";
 import { ALL_CONFIG_NAMES, type ConfigName } from "./configs";
-import { run } from "../lib/proc";
+import { extractFromDirectory } from "../docs-to-memories/extractor";
+import { writeToLanceDB } from "../docs-to-memories/to-lancedb";
 
 function printUsage() {
   console.log(`
 memory-hook-bench - Benchmark memory-hook vs AGENTS.md
 
 Commands:
-  setup --commit <sha>     Clone next-evals-oss (eval suite)
-  setup-docs [--ref tag]   Fetch Next.js docs (for memory extraction)
-  extract [options]        Extract memories from docs
-  run --all                Run all evals with all configs
-  run --evals 001,002      Run specific evals
-  run --configs baseline   Run specific configs
-  results                  Show latest results
+  setup --commit <sha>       Clone next-evals-oss (eval suite)
+  setup-docs [--ref tag]     Fetch Next.js docs (for memory extraction)
+  extract-memories           Extract memories from docs and write to LanceDB
+  run --all                  Run all evals with all configs
+  run --evals 001,002        Run specific evals
+  run --configs baseline     Run specific configs
+  results                    Show latest results
 
 Environment:
-  NEXT_EVALS_COMMIT        Default commit for setup
-  NEXTJS_DOCS_REF          Default ref for setup-docs (default: v16.1.0)
-  MEMORY_HOOK_PATH         Path to memory-hook package
-  CLAUDE_PATH              Path to claude CLI (default: claude)
-  ANTHROPIC_API_KEY        Required for reranking
+  NEXT_EVALS_COMMIT          Default commit for setup
+  NEXTJS_DOCS_REF            Default ref for setup-docs (default: v16.1.0)
+  MEMORY_HOOK_PATH           Path to memory-hook package
+  CLAUDE_PATH                Path to claude CLI (default: claude)
 
 Options (setup-docs):
-  --ref <tag>              Git ref to fetch (tag, branch, or SHA)
-  --force                  Re-fetch even if docs exist
+  --ref <tag>                Git ref to fetch (tag, branch, or SHA)
+  --force                    Re-fetch even if docs exist
+
+Options (extract-memories):
+  --verbose, -v              Show detailed progress per file/section
+  --skip-lancedb             Only extract JSON, don't embed to LanceDB
 
 Options (run):
-  --all                    Run all evals and configs
-  --evals <ids>            Comma-separated eval IDs
-  --configs <names>        Comma-separated config names
-  --timeout <ms>           Agent timeout (default: 600000)
-  --no-retry               Don't retry on timeout
-  --verbose                Show detailed output
-
-Options (extract):
-  --model <model>          Extraction model
-  --concurrency <n>        Parallel extractions
-  --chunk-size <n>         Chars per chunk
+  --all                      Run all evals and configs
+  --evals <ids>              Comma-separated eval IDs
+  --configs <names>          Comma-separated config names
+  --timeout <ms>             Agent timeout (default: 600000)
+  --no-retry                 Don't retry on timeout
+  --verbose                  Show detailed output
+  --skip-db-check            Skip memory DB existence check
 `);
 }
 
@@ -89,57 +92,55 @@ async function cmdSetupDocs(args: string[]) {
   await setupDocs(cfg, { ref, force });
 }
 
-async function cmdExtract(args: string[]) {
+async function cmdExtractMemories(args: string[]) {
   const cfg = loadBenchConfig();
+  const verbose = args.includes("--verbose") || args.includes("-v");
+  const skipLanceDb = args.includes("--skip-lancedb");
 
-  // Build args for docs-to-memories
-  const extractArgs = [
-    "run",
-    join(import.meta.dir, "../docs-to-memories/cli.ts"),
-    "extract",
-    cfg.docsDir,
-    "--output", cfg.memoriesJsonlPath,
-  ];
-
-  // Pass through options
-  for (let i = 0; i < args.length; i++) {
-    extractArgs.push(args[i]);
+  // Check if docs exist
+  if (!existsSync(cfg.docsDir)) {
+    console.error(`Docs directory not found: ${cfg.docsDir}`);
+    console.error(`Run 'memory-hook-bench setup-docs' first.`);
+    process.exit(1);
   }
 
-  console.log("Running memory extraction...");
-  const result = await run("bun", extractArgs, {
-    stdio: "inherit",
-    timeoutMs: 3600_000, // 1 hour
-  });
+  console.log(`\n${"=".repeat(60)}`);
+  console.log(`MEMORY EXTRACTION`);
+  console.log(`${"=".repeat(60)}`);
+  console.log(`Source: ${cfg.docsDir}`);
+  console.log(`Output: ${cfg.memoriesLancePath}`);
+  console.log(`${"=".repeat(60)}\n`);
 
-  if (result.code !== 0) {
-    console.error("Extraction failed");
-    process.exit(4);
+  // Extract memories from all docs
+  const memories = await extractFromDirectory(cfg.docsDir, { verbose });
+
+  if (memories.length === 0) {
+    console.warn("\nNo memories extracted. Check if docs contain actionable content.");
+    process.exit(1);
   }
 
-  // Also write to LanceDB
-  console.log("\nWriting to LanceDB...");
-  const lanceArgs = [
-    "run",
-    join(import.meta.dir, "../docs-to-memories/cli.ts"),
-    "extract",
-    cfg.docsDir,
-    "--output", `lancedb://${cfg.memoriesLancePath}`,
-  ];
+  console.log(`\nExtracted ${memories.length} memories total`);
 
-  for (let i = 0; i < args.length; i++) {
-    lanceArgs.push(args[i]);
+  // Write JSON backup
+  const jsonPath = cfg.memoriesJsonlPath.replace(".jsonl", ".json");
+  await mkdir(dirname(jsonPath), { recursive: true });
+  await writeFile(jsonPath, JSON.stringify(memories, null, 2));
+  console.log(`Written JSON to: ${jsonPath}`);
+
+  // Write to LanceDB
+  if (!skipLanceDb) {
+    console.log(`\nEmbedding and writing to LanceDB...`);
+    const lanceDir = dirname(cfg.memoriesLancePath);
+    await mkdir(lanceDir, { recursive: true });
+    await writeToLanceDB(memories, lanceDir);
   }
 
-  const lanceResult = await run("bun", lanceArgs, {
-    stdio: "inherit",
-    timeoutMs: 3600_000,
-  });
+  console.log(`\n✓ Extraction complete!`);
+}
 
-  if (lanceResult.code !== 0) {
-    console.error("LanceDB write failed");
-    process.exit(5);
-  }
+function checkMemoriesDbExists(cfg: ReturnType<typeof loadBenchConfig>): boolean {
+  const lanceDir = dirname(cfg.memoriesLancePath);
+  return existsSync(join(lanceDir, "memories.lance"));
 }
 
 async function cmdRun(args: string[]) {
@@ -151,6 +152,7 @@ async function cmdRun(args: string[]) {
   let retryOnTimeout = true;
   let verbose = false;
   let runAll = false;
+  let skipDbCheck = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -174,6 +176,9 @@ async function cmdRun(args: string[]) {
       case "-v":
         verbose = true;
         break;
+      case "--skip-db-check":
+        skipDbCheck = true;
+        break;
     }
   }
 
@@ -183,6 +188,18 @@ async function cmdRun(args: string[]) {
 
   if (configNames.length === 0) {
     configNames = ALL_CONFIG_NAMES;
+  }
+
+  // Check if memory-hook config is requested but DB doesn't exist
+  if (!skipDbCheck && configNames.includes("memory-hook")) {
+    if (!checkMemoriesDbExists(cfg)) {
+      console.warn(`\n⚠️  WARNING: Memory database not found!`);
+      console.warn(`   Expected: ${cfg.memoriesLancePath}`);
+      console.warn(`   The 'memory-hook' config requires extracted memories.`);
+      console.warn(`\n   Run 'memory-hook-bench extract-memories' first,`);
+      console.warn(`   or use '--skip-db-check' to proceed anyway.\n`);
+      process.exit(1);
+    }
   }
 
   // Discover evals
@@ -265,8 +282,8 @@ async function main() {
     case "setup-docs":
       await cmdSetupDocs(cmdArgs);
       break;
-    case "extract":
-      await cmdExtract(cmdArgs);
+    case "extract-memories":
+      await cmdExtractMemories(cmdArgs);
       break;
     case "run":
       await cmdRun(cmdArgs);
