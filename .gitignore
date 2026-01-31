@@ -5,3 +5,5 @@ artifacts/memories/
 artifacts/results/
 *.log
 .env
+.DS_Store
+artifacts/.DS_Store

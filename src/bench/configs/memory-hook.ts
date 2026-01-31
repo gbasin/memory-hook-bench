@@ -16,11 +16,11 @@ export const memoryHook: BenchScenario = {
       hooks: {
         PreToolUse: [
           {
-            matcher: "Edit|Write|Read",
+            matcher: "Edit|Write",
             hooks: [
               {
                 type: "command",
-                command: `bun run ${cfg.memoryHookPath}/src/memory-search.ts`,
+                command: `RERANK_PROVIDER=codex MEMORY_HOOK_DATA_DIR=${paths.root} bun run ${cfg.memoryHookPath}/src/memory-search.ts`,
               },
             ],
           },
@@ -34,7 +34,7 @@ export const memoryHook: BenchScenario = {
     // Use default Claude config for auth, project-level .claude/settings.json for hooks
     const env: NodeJS.ProcessEnv = {
       ...base,
-      RERANK_PROVIDER: "claude",
+      RERANK_PROVIDER: "codex",
       // Point memory-hook to workspace memories
       MEMORY_HOOK_DATA_DIR: paths.root,
     };
