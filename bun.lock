@@ -5,6 +5,7 @@
     "": {
       "name": "memory-hook-bench",
       "dependencies": {
+        "@anthropic-ai/sdk": "^0.72.1",
         "@lancedb/lancedb": "^0.13.0",
         "@xenova/transformers": "^2.17.0",
       },
@@ -15,6 +16,10 @@
     },
   },
   "packages": {
+    "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.72.1", "", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-MiUnue7qN7DvLIoYHgkedN2z05mRf2CutBzjXXY2krzOhG2r/rIfISS2uVkNLikgToB5hYIzw+xp2jdOtRkqYQ=="],
+
+    "@babel/runtime": ["@babel/runtime@7.28.6", "", {}, "sha512-05WQkdpL9COIMz4LjTxGpPNCdlpyimKppYNoJ5Di5EUObifl8t4tuLuUBBZEpoLYOmfvIWrsp9fCl0HoPRVTdA=="],
+
     "@huggingface/jinja": ["@huggingface/jinja@0.2.2", "", {}, "sha512-/KPde26khDUIPkTGU82jdtTW9UAuvUTumCAbFs/7giR0SxsvZC4hru51PBvpijH6BVkHcROcvZM/lpy5h1jRRA=="],
 
     "@lancedb/lancedb": ["@lancedb/lancedb@0.13.0", "", { "dependencies": { "reflect-metadata": "^0.2.2" }, "optionalDependencies": { "@lancedb/lancedb-darwin-arm64": "0.13.0", "@lancedb/lancedb-darwin-x64": "0.13.0", "@lancedb/lancedb-linux-arm64-gnu": "0.13.0", "@lancedb/lancedb-linux-x64-gnu": "0.13.0", "@lancedb/lancedb-win32-x64-msvc": "0.13.0" }, "peerDependencies": { "apache-arrow": ">=13.0.0 <=17.0.0" }, "os": [ "linux", "win32", "darwin", ], "cpu": [ "x64", "arm64", ] }, "sha512-QSzYvswjroH3aREKaqV6eXENo4zUAHLEPBrb2YCWNWZi/QhA8mbjJcB4hEnqQh55q4qgoqG6tuMsx4dd//mTiQ=="],
@@ -145,6 +150,8 @@
 
     "json-bignum": ["json-bignum@0.0.3", "", {}, "sha512-2WHyXj3OfHSgNyuzDbSxI1w2jgw5gkWSWhS7Qg4bWXx1nLk3jnbwfUeS0PSba3IzpTUWdHxBieELUzXRjQB2zg=="],
 
+    "json-schema-to-ts": ["json-schema-to-ts@3.1.1", "", { "dependencies": { "@babel/runtime": "^7.18.3", "ts-algebra": "^2.0.0" } }, "sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g=="],
+
     "lodash.camelcase": ["lodash.camelcase@4.3.0", "", {}, "sha512-TwuEnCnxbc3rAvhf/LbG7tJUDzhqXyFnv3dtzLOPgCG/hODL7WFnsbwktkD7yUV0RrreP/l1PALq/YSg6VvjlA=="],
 
     "long": ["long@4.0.0", "", {}, "sha512-XsP+KhQif4bjX1kbuSiySJFNAehNxgLb6hPRGJ9QsUr8ajHkuXGdrHmFUTUUXhDwVX2R5bY4JNZEwbUiMhV+MA=="],
@@ -212,6 +219,8 @@
     "tar-stream": ["tar-stream@3.1.7", "", { "dependencies": { "b4a": "^1.6.4", "fast-fifo": "^1.2.0", "streamx": "^2.15.0" } }, "sha512-qJj60CXt7IU1Ffyc3NJMjh6EkuCFej46zUqJ4J7pqYlThyd9bO0XBTmcOIhSzZJVWfsLks0+nle/j538YAW9RQ=="],
 
     "text-decoder": ["text-decoder@1.2.3", "", { "dependencies": { "b4a": "^1.6.4" } }, "sha512-3/o9z3X0X0fTupwsYvR03pJ/DjWuqqrfwBgTQzdWDiQSm9KitAyz/9WqsT2JQW7KV2m+bC2ol/zqpW37NHxLaA=="],
+
+    "ts-algebra": ["ts-algebra@2.0.0", "", {}, "sha512-FPAhNPFMrkwz76P7cdjdmiShwMynZYN6SgOujD1urY4oNm80Ou9oMdmbR45LotcKOXoy7wSmHkRFE6Mxbrhefw=="],
 
     "tslib": ["tslib@2.8.1", "", {}, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
 
