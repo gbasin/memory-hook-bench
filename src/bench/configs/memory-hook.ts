@@ -20,7 +20,9 @@ export const memoryHook: BenchScenario = {
             hooks: [
               {
                 type: "command",
-                command: `RERANK_PROVIDER=codex MEMORY_HOOK_DATA_DIR=${paths.root} bun run ${cfg.memoryHookPath}/src/memory-search.ts`,
+                // MEMORY_HOOK_DISABLED=0 overrides the env var to re-enable this specific hook
+                // (global hooks see MEMORY_HOOK_DISABLED=1 from buildEnv and skip)
+                command: `MEMORY_HOOK_DISABLED=0 RERANK_PROVIDER=codex MEMORY_HOOK_DATA_DIR=${paths.root} bun run ${cfg.memoryHookPath}/src/memory-search.ts`,
               },
             ],
           },
@@ -37,6 +39,8 @@ export const memoryHook: BenchScenario = {
       RERANK_PROVIDER: "codex",
       // Point memory-hook to workspace memories
       MEMORY_HOOK_DATA_DIR: paths.root,
+      // Disable global hooks - the project hook explicitly sets MEMORY_HOOK_DISABLED=0
+      MEMORY_HOOK_DISABLED: "1",
     };
 
     // Pass through API key for reranking
