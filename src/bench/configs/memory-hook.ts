@@ -12,17 +12,28 @@ export const memoryHook: BenchScenario = {
     await copyMemoriesDb(cfg.memoriesLancePath, paths.memoriesLancePath);
 
     // Write Claude settings with memory-hook enabled
+    const hookCommand = `MEMORY_HOOK_DISABLED=0 RERANK_PROVIDER=codex MEMORY_HOOK_DATA_DIR=${paths.root} bun run ${cfg.memoryHookPath}/src/memory-search.ts`;
     const settings = {
       hooks: {
+        // Inject memories at the start based on the user's prompt
+        UserPromptSubmit: [
+          {
+            hooks: [
+              {
+                type: "command",
+                command: hookCommand,
+              },
+            ],
+          },
+        ],
+        // Also inject on Edit/Write to catch context-specific memories
         PreToolUse: [
           {
             matcher: "Edit|Write",
             hooks: [
               {
                 type: "command",
-                // MEMORY_HOOK_DISABLED=0 overrides the env var to re-enable this specific hook
-                // (global hooks see MEMORY_HOOK_DISABLED=1 from buildEnv and skip)
-                command: `MEMORY_HOOK_DISABLED=0 RERANK_PROVIDER=codex MEMORY_HOOK_DATA_DIR=${paths.root} bun run ${cfg.memoryHookPath}/src/memory-search.ts`,
+                command: hookCommand,
               },
             ],
           },
